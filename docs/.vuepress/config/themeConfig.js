@@ -5,8 +5,8 @@ const nav = require('./themeConfig/nav.js');
 module.exports = {
   nav, // 顶部导航栏
   sidebarDepth: 2, // 侧边栏显示深度，默认1，最大2（显示到h3标题）
-  logo: 'https://cdn.staticaly.com/gh/eryajf/tu/main/img/image_20220720_132208.png', // 导航栏logo
-  repo: 'eryajf/rnotes', // 导航栏右侧生成Github链接
+  logo: 'https://cdn.staticaly.com/gh/lvsoso/tu/main/img/image_20220720_132208.png', // 导航栏logo
+  repo: 'lvsoso/rnotes', // 导航栏右侧生成Github链接
   searchMaxSuggestions: 10, // 搜索结果显示最大数
   lastUpdated: '上次更新', // 开启更新时间，并配置前缀文字   string | boolean (取值为git提交时间)
   editLinks: true, // 启用编辑链接
@@ -14,6 +14,7 @@ module.exports = {
   docsBranch: 'main', // 编辑的分支
   editLinkText: '帮助我们改善此页面',
   searchPlaceholder: "按下 𝑺 搜索",  // 可选：搜索栏占位文本，默认："$ grep ..."
+  defaultMode: 'dark',
 
   //*** 以下配置是Vdoing主题改动和新增的配置 ***//
 
@@ -40,8 +41,8 @@ module.exports = {
   },
   author: {
     // 文章默认的作者信息，可在md文件中单独配置此信息 String | {name: String, link: String}
-    name: '二丫讲梵', // 必需
-    link: 'https://github.com/eryajf', // 可选的
+    name: 'lvsoso', // 必需
+    link: 'https://github.com/lvsoso', // 可选的
   },
   social: {
     // 社交图标，显示于博主信息栏和页脚栏
@@ -50,24 +51,14 @@ module.exports = {
       {
         iconClass: 'icon-github',
         title: 'GitHub',
-        link: 'https://github.com/eryajf',
-      },
-      {
-        iconClass: 'icon-youjian',
-        title: '发邮件',
-        link: 'mailto:eryajf@163.com',
-      },
-      {
-        iconClass: 'icon-gitee',
-        title: 'Gitee',
-        link: 'https://gitee.com/eryajf',
+        link: 'https://github.com/lvsoso',
       },
     ],
   },
   footer: {
     // 页脚信息
-    createYear: 2022, // 博客创建年份
+    createYear: 2023,  // 博客创建年份
     copyrightInfo:
-      'Eryajf | <a href="https://github.com/eryajf/rnotes/blob/main/LICENSE" target="_blank">MIT License</a>', // 博客版权信息，支持a标签
+      'lvsoso | <a href="https://github.com/lvsoso/rnotes/blob/main/LICENSE" target="_blank">MIT License</a>', // 博客版权信息，支持a标签
   }
 }
