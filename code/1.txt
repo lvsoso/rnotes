@@ -1,0 +1,6 @@
+golang tee
+
+```golang
+var body bytes.Buffer
+tee := io.TeeReader(reqBody, &body)
+```
