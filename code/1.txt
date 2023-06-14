@@ -1,6 +1,38 @@
 golang tee
 
 ```golang
-var body bytes.Buffer
-tee := io.TeeReader(reqBody, &body)
+	var tee io.Reader
+	if service == "upload-pack" {
+		repoPath := h.dir
+		var body bytes.Buffer
+		tee = io.TeeReader(reqBody, &body)
+		defer func() {
+			reqData := body.Bytes()
+			fmt.Println(reqData)
+			firstCommit, err := git.GetFirstCommit(git.DefaultContext, repoPath)
+			if err == nil {
+				target := []byte(fmt.Sprintf("want %s ", firstCommit))
+				idx := bytes.Index(reqData, target)
+				if idx != -1 {
+					println(firstCommit)
+					println(idx)
+				}
+			}
+		}()
+	} else {
+		tee = reqBody
+	}
+```
+
+```golang
+func GetFirstCommit(ctx context.Context, repoPath string) (string, error) {
+	cmd := NewCommand(ctx, "rev-list")
+	cmd.AddArguments("--exclude=" + PullPrefix + "*")
+	cmd.AddArguments("--max-parents=0", "HEAD")
+	stdout, _, err := cmd.RunStdString(&RunOpts{Dir: repoPath})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout), nil
+}
 ```
