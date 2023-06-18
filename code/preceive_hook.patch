@@ -1,0 +1,220 @@
+diff --git a/modules/private/hook.go b/modules/private/hook.go
+index 9533eaae5..c85d4a007 100644
+--- a/modules/private/hook.go
++++ b/modules/private/hook.go
+@@ -108,7 +108,7 @@ func HookPreReceive(ctx context.Context, ownerName, repoName string, opts HookOp
+ 	req = req.Header("Content-Type", "application/json")
+ 	jsonBytes, _ := json.Marshal(opts)
+ 	req.Body(jsonBytes)
+-	req.SetTimeout(60*time.Second, time.Duration(60+len(opts.OldCommitIDs))*time.Second)
++	req.SetTimeout(60*time.Second, time.Duration(3600+len(opts.OldCommitIDs))*time.Second)
+ 	resp, err := req.Response()
+ 	if err != nil {
+ 		return http.StatusInternalServerError, fmt.Sprintf("Unable to contact gitea: %v", err.Error())
+diff --git a/routers/private/hook_pre_receive.go b/routers/private/hook_pre_receive.go
+index c711fc947..339eb095d 100644
+--- a/routers/private/hook_pre_receive.go
++++ b/routers/private/hook_pre_receive.go
+@@ -148,6 +148,16 @@ func preReceiveBranch(ctx *preReceiveContext, oldCommitID, newCommitID, refFullN
+ 	repo := ctx.Repo.Repository
+ 	gitRepo := ctx.Repo.GitRepo
+ 
++	// err := checkCommitFile(newCommitID, gitRepo, ctx.env)
++	// if err != nil {
++	// 	log.Warn(err.Error())
++	// }
++
++	err := checkEachCommitFile(oldCommitID, newCommitID, gitRepo, ctx.env)
++	if err != nil {
++		log.Warn(err.Error())
++	}
++
+ 	if branchName == repo.DefaultBranch && newCommitID == git.EmptySHA {
+ 		log.Warn("Forbidden: Branch: %s is the default branch in %-v and cannot be deleted", branchName, repo)
+ 		ctx.JSON(http.StatusForbidden, private.Response{
+diff --git a/routers/private/hook_verification.go b/routers/private/hook_verification.go
+index 8ccde4f3d..7aabe8763 100644
+--- a/routers/private/hook_verification.go
++++ b/routers/private/hook_verification.go
+@@ -10,9 +10,12 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"os"
++	"strconv"
++	"strings"
+ 
+ 	asymkey_model "code.gitea.io/gitea/models/asymkey"
+ 	"code.gitea.io/gitea/modules/git"
++	"code.gitea.io/gitea/modules/lfs"
+ 	"code.gitea.io/gitea/modules/log"
+ )
+ 
+@@ -113,6 +116,168 @@ func readAndVerifyCommit(sha string, repo *git.Repository, env []string) error {
+ 		})
+ }
+ 
++// ******************************************************
++// 100644 blob 811581db0fe5715dc69979e07b3fce19bbee2f55      12	1.txt
++
++// 100644 blob 4599302eef655fb8f18418052a53bd48cb83fa9e      48	2.txt
++
++// 100644 blob e8134ae07e261e418c1e189315cbf268761c3bc5       9	README.md
++
++// ---------------------------------------------------------------------------
++func checkCommitFile(sha string, repo *git.Repository, env []string) error {
++	stdoutReader, stdoutWriter, err := os.Pipe()
++	if err != nil {
++		log.Error("Unable to create pipe for %s: %v", repo.Path, err)
++		return err
++	}
++	defer func() {
++		_ = stdoutReader.Close()
++		_ = stdoutWriter.Close()
++	}()
++	hash := git.MustIDFromString(sha)
++
++	return git.NewCommand(repo.Ctx, "ls-tree", "-l", "--full-name").AddDynamicArguments(sha).
++		Run(&git.RunOpts{
++			Env:    env,
++			Dir:    repo.Path,
++			Stdout: stdoutWriter,
++			PipelineFunc: func(ctx context.Context, cancel context.CancelFunc) error {
++				_ = stdoutWriter.Close()
++				bufReader := bufio.NewReader(stdoutReader)
++				fmt.Println("******************************************************")
++			readLoop:
++				for {
++					line, err := bufReader.ReadBytes('\n')
++					if err != nil {
++						if err == io.EOF {
++							break readLoop
++						}
++						return nil
++					}
++					fmt.Println(string(line))
++				}
++				fmt.Println("---------------------------------------------------------------------------")
++				log.Info("%s", hash)
++				// commit, err := git.CommitFromReader(repo, hash, stdoutReader)
++				// if err != nil {
++				// 	return err
++				// }
++				// println(commit.ID.String())
++				return nil
++			},
++		})
++}
++
++func checkEachCommitFile(oldCommitID, newCommitID string, repo *git.Repository, env []string) error {
++	affectedFiles, err := git.GetAffectedFiles(repo, oldCommitID, newCommitID, env)
++	if err != nil {
++		return err
++	}
++
++	log.Info("%v", affectedFiles)
++	for _, f := range affectedFiles {
++		maybeLfs, err := checkFile(newCommitID, f, repo, env)
++		if err != nil {
++			return err
++		}
++		if maybeLfs {
++			_, err := checkLfsFile(newCommitID, f, repo, env)
++			if err != nil {
++				return err
++			}
++			return nil
++		}
++	}
++	return nil
++}
++
++func checkFile(newCommitID, fileName string, repo *git.Repository, env []string) (bool, error) {
++	maybeLfs := false
++
++	stdoutReader, stdoutWriter, err := os.Pipe()
++	if err != nil {
++		log.Error("Unable to create pipe for %s: %v", repo.Path, err)
++		return maybeLfs, err
++	}
++	defer func() {
++		_ = stdoutReader.Close()
++		_ = stdoutWriter.Close()
++	}()
++
++	err = git.NewCommand(repo.Ctx, "cat-file", "-s").AddDynamicArguments(fmt.Sprintf("%s:%s", newCommitID, fileName)).
++		Run(&git.RunOpts{
++			Env:    env,
++			Dir:    repo.Path,
++			Stdout: stdoutWriter,
++			PipelineFunc: func(ctx context.Context, cancel context.CancelFunc) error {
++				_ = stdoutWriter.Close()
++				bufReader := bufio.NewReader(stdoutReader)
++				fmt.Println("******************************************************")
++			readLoop:
++				for {
++					line, err := bufReader.ReadBytes('\n')
++					if err != nil {
++						if err == io.EOF {
++							break readLoop
++						}
++						return nil
++					}
++					size, err := strconv.Atoi(strings.Trim(string(line), " \n"))
++					if err != nil {
++						return err
++					}
++					fmt.Println(size)
++					if size > 120 && size < 185 {
++						maybeLfs = true
++					}
++				}
++				fmt.Println("---------------------------------------------------------------------------")
++
++				// commit, err := git.CommitFromReader(repo, hash, stdoutReader)
++				// if err != nil {
++				// 	return err
++				// }
++				// println(commit.ID.String())
++				return nil
++			},
++		})
++	return maybeLfs, err
++}
++
++func checkLfsFile(newCommitID, fileName string, repo *git.Repository, env []string) (string, error) {
++	oid := ""
++
++	stdoutReader, stdoutWriter, err := os.Pipe()
++	if err != nil {
++		log.Error("Unable to create pipe for %s: %v", repo.Path, err)
++		return oid, err
++	}
++	defer func() {
++		_ = stdoutReader.Close()
++		_ = stdoutWriter.Close()
++	}()
++
++	err = git.NewCommand(repo.Ctx, "cat-file", "-p").AddDynamicArguments(fmt.Sprintf("%s:%s", newCommitID, fileName)).
++		Run(&git.RunOpts{
++			Env:    env,
++			Dir:    repo.Path,
++			Stdout: stdoutWriter,
++			PipelineFunc: func(ctx context.Context, cancel context.CancelFunc) error {
++				_ = stdoutWriter.Close()
++				bufReader := bufio.NewReader(stdoutReader)
++				fmt.Println("******************************************************")
++				pointer, _ := lfs.ReadPointer(bufReader)
++				if pointer.IsValid() {
++					oid = pointer.Oid
++					fmt.Println(oid)
++				}
++				fmt.Println("---------------------------------------------------------------------------")
++				return nil
++			},
++		})
++	return oid, err
++}
++
+ type errUnverifiedCommit struct {
+ 	sha string
+ }
