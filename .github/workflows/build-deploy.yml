@@ -21,6 +21,7 @@ jobs:
         with:
           node-version: 18
       - run: |
+          export NODE_OPTIONS=--openssl-legacy-provider
           yarn
           yarn build
 
