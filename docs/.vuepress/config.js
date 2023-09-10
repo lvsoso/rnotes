@@ -13,5 +13,7 @@ module.exports = {
 
   head,
   plugins,
-  themeConfig,
+  themeConfig: {
+    sidebar: 'structuring' //  'structuring' | { mode: 'structuring', collapsable: Boolean} | 'auto' | 自定义
+ }
 }
