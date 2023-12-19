@@ -1,0 +1,2 @@
+predixy filter=lfs diff=lfs merge=lfs -text
+predixyFreeEdition-7.0.1-amd64-linux.tar.gz filter=lfs diff=lfs merge=lfs -text
