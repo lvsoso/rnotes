@@ -1,0 +1,7 @@
+load(":openapi.bzl", "my_rule")  
+
+
+# bazel build //:hello
+my_rule(  
+    name = "hello",  
+)

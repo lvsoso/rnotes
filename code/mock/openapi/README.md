@@ -15,8 +15,9 @@ docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate  
 ## get config
 docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli  config-help  -g go
 
+## gen mock
+mockgen   -source out/go/api_user.go  -destination mocktest/mock_client.go -package mock UserApi
 ```
-
 
 
 
