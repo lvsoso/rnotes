@@ -1,0 +1,37 @@
+GET http://127.0.0.1:8000/api/v1/user/1 HTTP/1.1
+content-type: application/json
+
+###
+GET http://127.0.0.1:8000/api/v1/user/extras HTTP/1.1
+content-type: application/json
+
+
+###
+GET http://127.0.0.1:8000/api/v1/user HTTP/1.1
+content-type: application/json
+
+
+###
+GET http://127.0.0.1:8000/fast-app/api/v1/user/1 HTTP/1.1
+content-type: application/json
+
+
+###
+GET http://127.0.0.1:8000/api/v1/resp/plaintext HTTP/1.1
+
+###
+GET http://127.0.0.1:8000/api/v1/resp/file HTTP/1.1
+
+###
+GET http://127.0.0.1:8000/api/v1/resp/stream HTTP/1.1
+
+###
+GET http://127.0.0.1:8000/api/v1/resp/redirect HTTP/1.1
+
+
+###
+GET http://127.0.0.1:8000/api/v1/resp/html HTTP/1.1
+
+
+###
+GET http://127.0.0.1:8000/items/1
