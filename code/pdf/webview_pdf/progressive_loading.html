@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>渐进式 PDF 加载示例</title>
+  <style>
+    .controls {
+      margin: 10px 0;
+    }
+    .info {
+      margin: 10px 0;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .progress {
+      margin: 10px 0;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #e0e0e0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background-color: #4CAF50;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+<h1>渐进式 PDF 加载示例</h1>
+
+<div class="info">
+  <strong>加载状态：</strong><span id="loadStatus">等待开始...</span><br>
+  <strong>下载进度：</strong><span id="downloadProgress">0%</span><br>
+  <strong>当前页面：</strong><span id="currentPage">-</span> / <span id="totalPages">-</span><br>
+  <strong>文件大小：</strong><span id="fileSize">-</span>
+</div>
+
+<div class="progress">
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="prev" type="button" disabled>上一页</button>
+  <button id="next" type="button" disabled>下一页</button>
+  <select id="pdfSelect">
+    <option value="">选择 PDF 文件...</option>
+  </select>
+  <button id="loadBtn" type="button">开始加载</button>
+</div>
+
+<div>
+  <canvas id="the-canvas" style="border: 1px solid black; direction: ltr; max-width: 100%;"></canvas>
+</div>
+
+<script type="module" id="script">
+  // 导入 PDF.js 模块
+  import * as pdfjsLib from './pdf.mjs';
+  
+  // 设置 worker 路径
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.mjs';
+  
+  // 将 pdfjsLib 暴露到全局作用域
+  window.pdfjsLib = pdfjsLib;
+
+  // 主应用程序逻辑
+  let pdfDoc = null;
+  let pageNum = 1;
+  let pageRendering = false;
+  let pageNumPending = null;
+  let scale = 1.0;
+  let loadingTask = null;
+
+  const canvas = document.getElementById('the-canvas');
+  const ctx = canvas.getContext('2d');
+  const loadStatusEl = document.getElementById('loadStatus');
+  const downloadProgressEl = document.getElementById('downloadProgress');
+  const currentPageEl = document.getElementById('currentPage');
+  const totalPagesEl = document.getElementById('totalPages');
+  const fileSizeEl = document.getElementById('fileSize');
+  const progressFill = document.getElementById('progressFill');
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  const pdfSelect = document.getElementById('pdfSelect');
+  const loadBtn = document.getElementById('loadBtn');
+
+  // 格式化文件大小
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  // 更新UI状态
+  function updateUI() {
+    prevBtn.disabled = !pdfDoc || pageNum <= 1;
+    nextBtn.disabled = !pdfDoc || pageNum >= pdfDoc.numPages;
+    currentPageEl.textContent = pdfDoc ? pageNum : '-';
+    totalPagesEl.textContent = pdfDoc ? pdfDoc.numPages : '-';
+  }
+
+  // 渲染页面
+  function renderPage(num) {
+    if (!pdfDoc) return;
+    
+    pageRendering = true;
+    loadStatusEl.textContent = `正在渲染第 ${num} 页...`;
+
+    pdfDoc.getPage(num).then(function(page) {
+      const viewport = page.getViewport({ scale: scale });
+      const outputScale = window.devicePixelRatio || 1;
+
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = Math.floor(viewport.width) + "px";
+      canvas.style.height = Math.floor(viewport.height) + "px";
+
+      const transform = outputScale !== 1
+        ? [outputScale, 0, 0, outputScale, 0, 0]
+        : null;
+
+      const renderContext = {
+        canvasContext: ctx,
+        transform: transform,
+        viewport: viewport,
+      };
+
+      const renderTask = page.render(renderContext);
+      
+      renderTask.promise.then(function () {
+        pageRendering = false;
+        loadStatusEl.textContent = `第 ${num} 页渲染完成`;
+        
+        if (pageNumPending !== null) {
+          renderPage(pageNumPending);
+          pageNumPending = null;
+        }
+      });
+    }).catch(function(error) {
+      console.error('渲染页面时出错:', error);
+      loadStatusEl.textContent = `渲染第 ${num} 页时出错`;
+      pageRendering = false;
+    });
+
+    updateUI();
+  }
+
+  function queueRenderPage(num) {
+    if (pageRendering) {
+      pageNumPending = num;
+    } else {
+      renderPage(num);
+    }
+  }
+
+  function onPrevPage() {
+    if (pageNum <= 1) return;
+    pageNum--;
+    queueRenderPage(pageNum);
+  }
+
+  function onNextPage() {
+    if (pageNum >= pdfDoc.numPages) return;
+    pageNum++;
+    queueRenderPage(pageNum);
+  }
+
+  // 加载 PDF 文件列表
+  async function loadFileList() {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/list');
+      const files = await response.json();
+      
+      pdfSelect.innerHTML = '<option value="">选择 PDF 文件...</option>';
+      files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file;
+        option.textContent = file;
+        pdfSelect.appendChild(option);
+      });
+    } catch (error) {
+      console.error('加载文件列表失败:', error);
+      loadStatusEl.textContent = '加载文件列表失败';
+    }
+  }
+
+  // 渐进式加载 PDF
+  async function loadPDF(filename) {
+    if (loadingTask) {
+      loadingTask.destroy();
+    }
+
+    const url = `http://127.0.0.1:8000/api/pdf/${encodeURIComponent(filename)}`;
+    
+    loadStatusEl.textContent = '开始加载 PDF...';
+    downloadProgressEl.textContent = '0%';
+    progressFill.style.width = '0%';
+    
+    // 配置渐进式加载选项
+    const loadingOptions = {
+      url: url,
+      rangeChunkSize: 65536, // 64KB 的块大小
+      disableStream: true,
+      disableAutoFetch: true,
+      disableRange: false
+    };
+
+    loadingTask = pdfjsLib.getDocument(loadingOptions);
+    
+    // 监听加载进度
+    loadingTask.onProgress = function(progress) {
+      if (progress.total > 0) {
+        const percent = Math.round((progress.loaded / progress.total) * 100);
+        downloadProgressEl.textContent = `${percent}%`;
+        progressFill.style.width = `${percent}%`;
+        fileSizeEl.textContent = `${formatFileSize(progress.loaded)} / ${formatFileSize(progress.total)}`;
+        loadStatusEl.textContent = `正在下载... ${percent}%`;
+      } else {
+        fileSizeEl.textContent = formatFileSize(progress.loaded);
+        loadStatusEl.textContent = `正在下载... ${formatFileSize(progress.loaded)}`;
+      }
+    };
+
+    try {
+      pdfDoc = await loadingTask.promise;
+      loadStatusEl.textContent = 'PDF 加载完成！';
+      
+      // 重置到第一页
+      pageNum = 1;
+      updateUI();
+      
+      // 渲染第一页
+      renderPage(pageNum);
+      
+    } catch (error) {
+      console.error('加载 PDF 时出错:', error);
+      loadStatusEl.textContent = `加载失败: ${error.message}`;
+      pdfDoc = null;
+      updateUI();
+    }
+  }
+
+  // 事件监听器
+  prevBtn.addEventListener('click', onPrevPage);
+  nextBtn.addEventListener('click', onNextPage);
+  
+  loadBtn.addEventListener('click', function() {
+    const selectedFile = pdfSelect.value;
+    if (selectedFile) {
+      loadPDF(selectedFile);
+    } else {
+      alert('请先选择一个 PDF 文件');
+    }
+  });
+
+  // 键盘导航
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowLeft') {
+      onPrevPage();
+    } else if (e.key === 'ArrowRight') {
+      onNextPage();
+    }
+  });
+
+  // 初始化
+  loadFileList();
+  updateUI();
+</script>
+
+<hr>
+<h2>功能说明：</h2>
+<ul>
+  <li><strong>渐进式下载：</strong>使用 Range 请求分块下载 PDF，显示实时进度</li>
+  <li><strong>按需渲染：</strong>只渲染当前查看的页面，提高性能</li>
+  <li><strong>进度监控：</strong>实时显示下载进度和文件大小</li>
+  <li><strong>文件选择：</strong>从服务器动态加载可用的 PDF 文件列表</li>
+  <li><strong>键盘导航：</strong>支持左右箭头键翻页</li>
+</ul>
+
+</body>
+</html>

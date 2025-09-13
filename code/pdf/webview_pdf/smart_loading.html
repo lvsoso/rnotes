@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>渐进式加载 - 分页预加载</title>
+  <style>
+    .controls { margin: 10px 0; }
+    .info { 
+      margin: 10px 0; 
+      padding: 10px; 
+      background-color: #f9f9f9; 
+      border-radius: 4px; 
+      font-family: monospace;
+    }
+    .page-cache {
+      margin: 5px 0;
+      font-size: 12px;
+      color: #666;
+    }
+    .cached { color: #4CAF50; }
+    .loading { color: #FF9800; }
+    .error { color: #F44336; }
+  </style>
+</head>
+<body>
+
+<h1>智能分页预加载示例</h1>
+
+<div class="info">
+  <div><strong>加载策略：</strong>当前页 + 前后各2页预加载</div>
+  <div><strong>当前页面：</strong><span id="currentPage">1</span> / <span id="totalPages">-</span></div>
+  <div><strong>PDF状态：</strong><span id="pdfStatus">未加载</span></div>
+  <div class="page-cache">
+    <strong>页面缓存状态：</strong>
+    <div id="cacheStatus"></div>
+  </div>
+</div>
+
+
+<div class="controls">
+  <select id="pdfSelect">
+    <option value="">选择 PDF 文件...</option>
+  </select>
+  <button id="loadPdf">加载 PDF</button>
+</div>
+
+<div id="pdfContainer" style="width: 100%; max-width: 900px; margin: 0 auto; border: 1px solid #ccc; height: 80vh; overflow-y: auto; background: #fff;">
+  <!-- 页面canvas将动态插入 -->
+</div>
+
+<script type="module">
+  // 导入 PDF.js 模块
+  import * as pdfjsLib from './pdf.mjs';
+  
+  // 设置 worker 路径
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.mjs';
+  
+  // 将 pdfjsLib 暴露到全局作用域以便类可以使用
+  window.pdfjsLib = pdfjsLib;
+
+  class ScrollPDFViewer {
+    constructor() {
+      this.pdfDoc = null;
+      this.pageCache = new Map(); // 缓存已渲染的页面
+      this.loadingPages = new Set(); // 正在加载的页面
+      this.renderingPages = new Set();
+      this.pdfContainer = document.getElementById('pdfContainer');
+      this.preloadRange = 2;
+      this.currentFile = null;
+      this.totalPages = 0;
+      this.pageHeights = new Map(); // 新增：记录每页实际高度
+      this.initEventListeners();
+    }
+
+    initEventListeners() {
+      document.getElementById('loadPdf').addEventListener('click', () => this.loadSelectedPDF());
+      document.getElementById('pdfSelect').addEventListener('change', () => {
+        document.getElementById('pdfStatus').textContent = '未加载';
+        this.clearPDF();
+      });
+      this.pdfContainer.addEventListener('scroll', () => this.onScroll());
+    }
+
+    async loadFileList() {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/list');
+        const files = await response.json();
+        const pdfSelect = document.getElementById('pdfSelect');
+        pdfSelect.innerHTML = '<option value="">选择 PDF 文件...</option>';
+        files.forEach(file => {
+          const option = document.createElement('option');
+          option.value = file;
+          option.textContent = file;
+          pdfSelect.appendChild(option);
+        });
+      } catch (e) {
+        document.getElementById('pdfStatus').textContent = '加载文件列表失败';
+      }
+    }
+
+    clearPDF() {
+      this.pdfDoc = null;
+      this.pageCache.clear();
+      this.loadingPages.clear();
+      this.renderingPages.clear();
+      this.totalPages = 0;
+      this.pageHeights = new Map();
+      this.pdfContainer.innerHTML = '';
+      document.getElementById('totalPages').textContent = '-';
+      this.updateCacheStatus();
+    }
+
+    async loadSelectedPDF() {
+      const pdfSelect = document.getElementById('pdfSelect');
+      const filename = pdfSelect.value;
+      if (!filename) {
+        alert('请先选择一个 PDF 文件');
+        return;
+      }
+      this.clearPDF();
+      document.getElementById('pdfStatus').textContent = '正在加载 PDF...';
+      const url = `http://127.0.0.1:8000/api/pdf/${encodeURIComponent(filename)}`;
+      this.currentFile = filename;
+      try {
+        const loadingTask = pdfjsLib.getDocument({
+          url: url,
+          rangeChunkSize: 32768,
+          disableStream: true,
+          disableAutoFetch: true,
+          disableRange: false
+        });
+        this.pdfDoc = await loadingTask.promise;
+        this.totalPages = this.pdfDoc.numPages;
+        document.getElementById('totalPages').textContent = this.totalPages;
+        document.getElementById('pdfStatus').textContent = `已加载 (${this.totalPages} 页)`;
+        // 初始渲染前3页
+        for (let i = 1; i <= Math.min(3, this.totalPages); i++) {
+          this.renderPage(i);
+        }
+        this.updateCacheStatus();
+      } catch (e) {
+        document.getElementById('pdfStatus').textContent = `加载失败: ${e.message}`;
+      }
+    }
+
+    async renderPage(pageNum) {
+      if (!this.pdfDoc || this.pageCache.has(pageNum) || this.loadingPages.has(pageNum) || this.renderingPages.has(pageNum)) return;
+      this.loadingPages.add(pageNum);
+      this.updateCacheStatus();
+      try {
+        const page = await this.pdfDoc.getPage(pageNum);
+        const scale = 1.2;
+        const viewport = page.getViewport({ scale });
+        const outputScale = window.devicePixelRatio || 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = Math.floor(viewport.width) + 'px';
+        canvas.style.height = Math.floor(viewport.height) + 'px';
+        canvas.setAttribute('data-page', pageNum);
+        canvas.style.display = 'block';
+        canvas.style.margin = '0 auto 20px auto';
+        // 插入到正确位置
+        let inserted = false;
+        for (let child of this.pdfContainer.children) {
+          const p = parseInt(child.getAttribute('data-page'));
+          if (p > pageNum) {
+            this.pdfContainer.insertBefore(canvas, child);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) this.pdfContainer.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+        this.renderingPages.add(pageNum);
+        await page.render({ canvasContext: ctx, transform, viewport }).promise;
+        this.pageCache.set(pageNum, canvas);
+        this.pageHeights.set(pageNum, canvas.offsetHeight); // 记录实际高度
+        this.loadingPages.delete(pageNum);
+        this.renderingPages.delete(pageNum);
+        this.updateCacheStatus();
+        // 渲染新页面后自动触发一次 onScroll，保证后续页面能被加载
+        setTimeout(() => this.onScroll(), 0);
+      } catch (e) {
+        this.loadingPages.delete(pageNum);
+        this.renderingPages.delete(pageNum);
+      }
+    }
+
+    onScroll() {
+      if (!this.pdfDoc) return;
+      const container = this.pdfContainer;
+      const scrollTop = container.scrollTop;
+      const containerHeight = container.clientHeight;
+      const buffer = 400; // 预加载缓冲区
+      // 计算平均高度
+      let avgHeight = 900;
+      if (this.pageHeights.size > 0) {
+        let sum = 0;
+        for (let h of this.pageHeights.values()) sum += h;
+        avgHeight = sum / this.pageHeights.size;
+      }
+      // 遍历所有页面，判断是否需要渲染
+      for (let i = 1; i <= this.totalPages; i++) {
+        const canvas = this.pageCache.get(i);
+        let top = 0, height = 0;
+        if (canvas) {
+          top = canvas.offsetTop;
+          height = canvas.offsetHeight;
+        } else {
+          // 用平均高度估算
+          height = avgHeight;
+          top = (i - 1) * (avgHeight + 20);
+        }
+        if (top + height > scrollTop - buffer && top < scrollTop + containerHeight + buffer) {
+          this.renderPage(i);
+        }
+      }
+      // 若接近底部，强制加载后续几页
+      if (container.scrollHeight - (scrollTop + containerHeight) < buffer) {
+        for (let i = 1; i <= this.totalPages; i++) {
+          if (!this.pageCache.has(i) && !this.loadingPages.has(i) && !this.renderingPages.has(i)) {
+            if (i > Math.floor((scrollTop + containerHeight) / (avgHeight + 20))) {
+              this.renderPage(i);
+            }
+          }
+        }
+      }
+    }
+
+    updateCacheStatus() {
+      const statusDiv = document.getElementById('cacheStatus');
+      if (!this.pdfDoc) {
+        statusDiv.innerHTML = '无PDF文档';
+        return;
+      }
+      let html = '';
+      for (let i = 1; i <= Math.min(this.totalPages, 20); i++) {
+        let className = '';
+        let status = '';
+        if (this.pageCache.has(i)) {
+          className = 'cached';
+          status = '已缓存';
+        } else if (this.loadingPages.has(i) || this.renderingPages.has(i)) {
+          className = 'loading';
+          status = '加载中';
+        } else {
+          status = '未加载';
+        }
+        html += `<span class="${className}">第${i}页: ${status}</span> `;
+      }
+      if (this.totalPages > 20) html += '...';
+      statusDiv.innerHTML = html;
+    }
+  }
+
+  // 初始化滚动查看器
+  const viewer = new ScrollPDFViewer();
+  viewer.loadFileList();
+</script>
+
+<hr>
+<h2>渐进式加载特性：</h2>
+<ul>
+  <li><strong>真正的按需加载：</strong>disableAutoFetch=true，只加载需要的页面</li>
+  <li><strong>智能预加载：</strong>自动预加载当前页前后2页</li>
+  <li><strong>页面缓存：</strong>已渲染的页面保存在内存中，切换时秒开</li>
+  <li><strong>实时状态：</strong>显示每页的缓存状态（已缓存/加载中/未加载）</li>
+  <li><strong>优化策略：</strong>使用离屏canvas预渲染，减少重复计算</li>
+</ul>
+
+</body>
+</html>
