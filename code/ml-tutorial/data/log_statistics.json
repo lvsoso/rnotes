@@ -1,0 +1,17 @@
+{
+  "total_logs": 100,
+  "time_range": {
+    "start": "2025-12-11T23:31:38.075957",
+    "end": "2025-12-12T23:31:38.075962"
+  },
+  "traffic_distribution": {
+    "normal": 0.6,
+    "sql_injection": 0.1,
+    "xss": 0.08,
+    "path_traversal": 0.05,
+    "scanner": 0.07,
+    "ddos": 0.05,
+    "bot": 0.05
+  },
+  "generated_at": "2025-12-12T23:31:38.078246"
+}

@@ -1,0 +1,74 @@
+{
+  "查询所有日志": {
+    "GET": "nginx-logs-*/_search",
+    "body": {
+      "query": {"match_all": {}},
+      "size": 10
+    }
+  },
+
+  "查询威胁日志": {
+    "GET": "nginx-logs-*/_search",
+    "body": {
+      "query": {
+        "bool": {
+          "must_not": [
+            {"term": {"threat_type": "none"}}
+          ]
+        }
+      },
+      "sort": [{"@timestamp": "desc"}]
+    }
+  },
+
+  "按威胁类型聚合": {
+    "GET": "nginx-logs-*/_search",
+    "body": {
+      "size": 0,
+      "aggs": {
+        "threat_types": {
+          "terms": {"field": "threat_type"}
+        }
+      }
+    }
+  },
+
+  "按时间聚合请求数": {
+    "GET": "nginx-logs-*/_search",
+    "body": {
+      "size": 0,
+      "aggs": {
+        "requests_over_time": {
+          "date_histogram": {
+            "field": "@timestamp",
+            "interval": "1h"
+          }
+        }
+      }
+    }
+  },
+
+  "查询高风险日志": {
+    "GET": "nginx-logs-*/_search",
+    "body": {
+      "query": {
+        "terms": {"risk_level": ["high", "critical"]}
+      }
+    }
+  },
+
+  "统计平均响应时间": {
+    "GET": "nginx-logs-*/_search",
+    "body": {
+      "size": 0,
+      "aggs": {
+        "avg_response_time": {
+          "avg": {"field": "request_time"}
+        },
+        "max_response_time": {
+          "max": {"field": "request_time"}
+        }
+      }
+    }
+  }
+}

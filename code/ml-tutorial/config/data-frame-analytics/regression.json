@@ -1,0 +1,31 @@
+{
+  "description": "响应时间预测 - 预测请求的响应时间",
+  "source": {
+    "index": ["nginx-logs-*"],
+    "query": {
+      "match_all": {}
+    }
+  },
+  "dest": {
+    "index": "nginx-response-time-prediction",
+    "results_field": "ml"
+  },
+  "analysis": {
+    "regression": {
+      "dependent_variable": "request_time",
+      "training_percent": 80,
+      "prediction_field_name": "predicted_request_time"
+    }
+  },
+  "analyzed_fields": {
+    "includes": [
+      "status",
+      "body_bytes_sent",
+      "request_method",
+      "threat_type"
+    ],
+    "excludes": []
+  },
+  "model_memory_limit": "200mb",
+  "max_num_threads": 1
+}

@@ -1,0 +1,32 @@
+{
+  "description": "威胁分类 - 预测请求的威胁类型",
+  "source": {
+    "index": ["nginx-logs-*"],
+    "query": {
+      "match_all": {}
+    }
+  },
+  "dest": {
+    "index": "nginx-threat-classification",
+    "results_field": "ml"
+  },
+  "analysis": {
+    "classification": {
+      "dependent_variable": "threat_type",
+      "training_percent": 80,
+      "num_top_classes": 3,
+      "prediction_field_name": "predicted_threat_type"
+    }
+  },
+  "analyzed_fields": {
+    "includes": [
+      "status",
+      "body_bytes_sent",
+      "request_time",
+      "request_method"
+    ],
+    "excludes": []
+  },
+  "model_memory_limit": "200mb",
+  "max_num_threads": 1
+}
