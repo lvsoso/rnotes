@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "calculator": "./calculator.py:react_graph"
+  },
+  "env": ".env"
+}
