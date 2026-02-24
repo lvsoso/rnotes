@@ -1,0 +1,4 @@
+{
+    "scan_llm_model_id": "LongCat-Flash-Lite",
+    "test_llm_model_id": "Qwen3-4B-Instruct-2507"
+}

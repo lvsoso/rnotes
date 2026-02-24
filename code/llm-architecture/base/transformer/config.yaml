@@ -1,0 +1,33 @@
+seed: 42
+
+data:
+  dataset_name: wmt17              # 默认使用 WMT17 中文-英文翻译 (zh-en)
+  lang_pair: zh-en
+  data_dir: ./data/wmt17_zh_en
+  vocab_size: 16000
+  max_len: 64
+  num_workers: 4
+  eval_batch_size: 32
+
+model:
+  d_model: 256
+  n_layers: 4
+  n_heads: 4
+  d_ff: 1024
+  dropout: 0.1
+  share_embeddings: true
+  pad_idx: 0
+
+training:
+  batch_size: 64
+  total_steps: 50000
+  warmup_steps: 4000
+  lr_factor: 1.0
+  label_smoothing: 0.1
+  adam_betas: [0.9, 0.98]
+  adam_eps: 1.0e-9
+  grad_accum_steps: 2
+  max_grad_norm: 1.0
+  mixed_precision: true
+  log_interval: 100
+  eval_interval: 1000

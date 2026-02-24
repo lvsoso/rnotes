@@ -1,0 +1,23 @@
+# 数据与中间产物目录
+data/
+checkpoints/
+logs/
+
+# Python 缓存与编译文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 虚拟环境
+.venv/
+venv/
+
+# Jupyter 相关
+.ipynb_checkpoints/
+
+# 大体积模型与权重文件
+*.pt
+*.bin
+*.safetensors
+

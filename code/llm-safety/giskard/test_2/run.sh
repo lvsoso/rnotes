@@ -1,0 +1,12 @@
+python -m vllm.entrypoints.openai.api_server \
+    --model /root/workspace/Qwen3-14B-AWQ \
+    --served-model-name Qwen3-14B-AWQ \
+    --quantization awq \
+    --tensor-parallel-size 1 \
+    --max-model-len 16384 \
+    --port 8000 \
+    --host 0.0.0.0 \
+    --gpu-memory-utilization 0.92 \
+    --enable-prefix-caching \
+    --dtype auto \
+    --default-chat-template-kwargs '{"enable_thinking": false}'
