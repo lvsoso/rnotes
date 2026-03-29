@@ -1,6 +1,6 @@
 from typing import List
 import json
-import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -11,6 +11,8 @@ WORKDIR = Path.cwd()
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
 Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done.
 Prefer tools over prose."""
+SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}. 
+Complete the given task, then summarize your findings."""
 
 
 class TodoManager:
@@ -62,9 +64,17 @@ def safe_path(p: str) -> Path:
 
 
 def run_bash(command: str) -> str:
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
-        return "Error: Dangerous command blocked"
+    _BLOCKED_PATTERNS = [
+        re.compile(r'\brm\s+-rf\s+/'),
+        re.compile(r'\bsudo\b'),
+        re.compile(r'\bshutdown\b'),
+        re.compile(r'\breboot\b'),
+        re.compile(r'>\s*/dev/'),
+        re.compile(r'\b(curl|wget)\b.*\|\s*(ba)?sh\b'),
+    ]
+    for pat in _BLOCKED_PATTERNS:
+        if pat.search(command):
+            return "Error: Dangerous command blocked"
     try:
         r = subprocess.run(
             command, shell=True, cwd=WORKDIR, capture_output=True, text=True, timeout=120
@@ -82,6 +92,12 @@ def run_read(path: str, limit: int = None) -> str:
         if limit and limit < len(lines):
             lines = lines[:limit] + [f"... ({len(lines) - limit} more lines)"]
         return "\n".join(lines)[:50000]
+    except FileNotFoundError:
+        return f"Error: File not found: {path}"
+    except PermissionError:
+        return f"Error: Permission denied: {path}"
+    except ValueError as e:
+        return f"Error: {e}"
     except Exception as e:
         return f"Error: {e}"
 
@@ -92,6 +108,10 @@ def run_write(path: str, content: str) -> str:
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(content)
         return f"wrote {len(content)} bytes to {fp}"
+    except PermissionError:
+        return f"Error: Permission denied: {path}"
+    except ValueError as e:
+        return f"Error: {e}"
     except Exception as e:
         return f"Error: {e}"
 
@@ -104,6 +124,12 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
             return f"Error: {old_text!r} not found in {path}"
         fp.write_text(content.replace(old_text, new_text, 1))
         return f"edited {path}"
+    except FileNotFoundError:
+        return f"Error: File not found: {path}"
+    except PermissionError:
+        return f"Error: Permission denied: {path}"
+    except ValueError as e:
+        return f"Error: {e}"
     except Exception as e:
         return f"Error: {e}"
 
@@ -118,7 +144,7 @@ TOOL_HANDLERS = {
 
 
 # OpenAI 格式的工具定义
-TOOLS = [
+CHILD_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -192,17 +218,66 @@ TOOLS = [
     }
 ]
 
-def agent_loop(messages: list):
+PARENT_TOOLS = CHILD_TOOLS + [
+    {
+        "type": "function",
+        "function": {
+            "name": "task",
+            "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "description": {"type": "string", "description": "Short description of the task"},
+                },
+                "required": ["prompt"],
+            },
+        },
+    }
+]
+
+
+def run_subagent(prompt: str) -> str:
+    sub_messages = [{"role": "user", "content": prompt}]
+    for _ in range(30):
+        response = lc.complete_result(sub_messages, system=SUBAGENT_SYSTEM, tools=CHILD_TOOLS)
+        sub_messages.append({"role": "assistant", "content": response.text})
+        if not response.tool_calls:
+            break
+        for tc in response.tool_calls or []:
+            func = tc.get("function", {})
+            name = func.get("name")
+            args_str = func.get("arguments", "{}")
+
+            try:
+                args = json.loads(args_str) if isinstance(args_str, str) else args_str
+            except json.JSONDecodeError as e:
+                output = f"Error: Invalid arguments JSON - {e}"
+            else:
+                handler = TOOL_HANDLERS.get(name)
+                try:
+                    output = handler(**args) if handler else f"Unknown tool: {name}"
+                except Exception as e:
+                    output = f"Error executing {name}: {e}"
+            sub_messages.append({"role": "tool", "tool_call_id": tc.get("id"), "content": output})
+
+    for m in reversed(sub_messages):
+        if m["role"] == "assistant":
+            return m["content"]
+    return ""
+
+
+def agent_loop(messages: list, max_rounds: int = 30):
     """Agent loop with todo reminder."""
     rounds_since_todo = 0
 
-    while True:
-        response = lc.complete_result(messages, system=SYSTEM, tools=TOOLS)
+    for _ in range(max_rounds):
+        response = lc.complete_result(messages, system=SYSTEM, tools=PARENT_TOOLS)
 
         # 检查本轮是否使用了 todo
         used_todo = any(
             tc.get("function", {}).get("name") == "todo"
-            for tc in response.tool_calls
+            for tc in (response.tool_calls or [])
         )
 
         if used_todo:
@@ -235,7 +310,7 @@ def agent_loop(messages: list):
         })
 
         # 执行每个 tool call
-        for tc in response.tool_calls:
+        for tc in response.tool_calls or []:
             func = tc.get("function", {})
             name = func.get("name")
             args_str = func.get("arguments", "{}")
@@ -263,6 +338,8 @@ def agent_loop(messages: list):
                 "role": "user",
                 "content": "<reminder>Remember to update your todos to track progress.</reminder>"
             })
+
+    return "Error: Max rounds exceeded"
 
 
 
