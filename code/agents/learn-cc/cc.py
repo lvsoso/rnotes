@@ -212,9 +212,17 @@ CHILD_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "todos": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "text": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}}, "required": ["id", "text", "status"]}}}
-                },
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "text": {"type": "string"},
+                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}},
+                                "required": ["id", "text", "status"]}}},
                 "required": ["todos"],
+                },
             },
     }
 ]
