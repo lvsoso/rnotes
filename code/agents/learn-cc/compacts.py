@@ -3,7 +3,7 @@ import json
 import time
 
 from llm_client import llm_client as lc
-from config import TRANSCRIPT_DIR, KEEP_RECENT
+from config import TRANSCRIPT_DIR, KEEP_RECENT, PRESERVE_RESULT_TOOLS
 
 
 def estimate_tokens(messages: list) -> int:
@@ -31,13 +31,18 @@ def micro_compact(messages: list) -> list:
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
                         tool_name_map[block.get("id")] = block.get("name", "unknown")
-    # Clear old results (keep last KEEP_RECENT)
+
+    # Clear old results (keep last KEEP_RECENT). Preserve read_file outputs because
+    # they are reference material; compacting them forces the agent to re-read files.
     to_clear = tool_results[:-KEEP_RECENT]
     for _, _, result in to_clear:
-        if isinstance(result.get("content"), str) and len(result["content"]) > 100:
-            tool_id = result.get("tool_use_id", "")
-            tool_name = tool_name_map.get(tool_id, "unknown")
-            result["content"] = f"[Previous: used {tool_name}]"
+        if not isinstance(result.get("content"), str) or len(result["content"]) <= 100:
+            continue
+        tool_id = result.get("tool_use_id", "")
+        tool_name = tool_name_map.get(tool_id, "unknown")
+        if tool_name in PRESERVE_RESULT_TOOLS:
+            continue
+        result["content"] = f"[Previous: used {tool_name}]"
     return messages
 
 
@@ -52,7 +57,7 @@ def auto_compact(messages: list) -> list:
     print(f"[transcript saved: {transcript_path}]")
 
     # Ask LLM to summarize
-    conversation_text = json.dumps(messages, default=str)[:80000]
+    conversation_text = json.dumps(messages, default=str)[-80000:]
     summary = lc.ask(
         "Summarize this conversation for continuity. Include: "
         "1) What was accomplished, 2) Current state, 3) Key decisions made. "
@@ -61,6 +66,5 @@ def auto_compact(messages: list) -> list:
 
     # Replace all messages with compressed summary
     return [
-        {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path}]\n\n{summary}"},
-        {"role": "assistant", "content": "Understood. I have the context from the summary. Continuing."},
+        {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path}]\n\n{summary}"}
     ]

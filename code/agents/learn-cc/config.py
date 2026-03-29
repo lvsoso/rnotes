@@ -20,3 +20,6 @@ SKILLS_DIR = WORKDIR / "skills"
 THRESHOLD = 50000
 TRANSCRIPT_DIR = WORKDIR / ".transcripts"
 KEEP_RECENT = 3
+PRESERVE_RESULT_TOOLS = {"read_file"}
+
+TASKS_DIR = WORKDIR / ".tasks"

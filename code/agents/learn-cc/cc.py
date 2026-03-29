@@ -8,6 +8,7 @@ from todos import TODO
 from tools import PARENT_TOOLS, run_bash, run_read, run_write, run_edit
 from subagent import run_subagent
 from compacts import micro_compact, auto_compact, estimate_tokens
+from tasks import TASKS
 
 
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
@@ -25,10 +26,14 @@ TOOL_HANDLERS = {
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "todo": lambda **kw: TODO.update(kw["todos"]),
-    "task": lambda **kw: run_subagent(kw["prompt"]),
+    # "todo": lambda **kw: TODO.update(kw["todos"]),
+    # "task": lambda **kw: run_subagent(kw["prompt"]),
     "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
-    "compact":    lambda **kw: "Manual compression requested."
+    "compact":    lambda **kw: "Manual compression requested.",
+    "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
+    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("add_blocked_by"), kw.get("add_blocks")),
+    "task_list":   lambda **kw: TASKS.list_all(),
+    "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
 }
 
 

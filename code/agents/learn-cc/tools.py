@@ -143,31 +143,31 @@ CHILD_TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "todo",
-            "description": "Update task list. Track progress on multi-step tasks.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "todos": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "string"},
-                                "text": {"type": "string"},
-                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
-                            },
-                            "required": ["id", "text", "status"]
-                        }
-                    }
-                },
-                "required": ["todos"]
-            }
-        }
-    },
+    # {
+    #     "type": "function",
+    #     "function": {
+    #         "name": "todo",
+    #         "description": "Update task list. Track progress on multi-step tasks.",
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": {
+    #                 "todos": {
+    #                     "type": "array",
+    #                     "items": {
+    #                         "type": "object",
+    #                         "properties": {
+    #                             "id": {"type": "string"},
+    #                             "text": {"type": "string"},
+    #                             "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
+    #                         },
+    #                         "required": ["id", "text", "status"]
+    #                     }
+    #                 }
+    #             },
+    #             "required": ["todos"]
+    #         }
+    #     }
+    # },
     {
         "type": "function",
         "function": {
@@ -191,23 +191,75 @@ CHILD_TOOLS = [
                 "required": ["focus"],
             },
         },
-    }
-]
-
-PARENT_TOOLS = CHILD_TOOLS + [
+    },
     {
         "type": "function",
         "function": {
-            "name": "task",
-            "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
+            "name": "task_create",
+            "description": "Create a new task.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "prompt": {"type": "string"},
-                    "description": {"type": "string", "description": "Short description of the task"},
+                    "subject": {"type": "string"},
+                    "description": {"type": "string"},
                 },
-                "required": ["prompt"],
+                "required": ["subject"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_update",
+            "description": "Update a task's status or dependencies.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "integer"},
+                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]},
+                    "add_blocked_by": {"type": "array", "items": {"type": "integer"}},
+                    "add_blocks": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_list",
+            "description": "List all tasks with status summary.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_get",
+            "description": "Get full details of a task by ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task_id": {"type": "integer"}},
+                "required": ["task_id"],
+            },
+        },
+    },
+]
+
+PARENT_TOOLS = CHILD_TOOLS + [
+    # {
+    #     "type": "function",
+    #     "function": {
+    #         "name": "task",
+    #         "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": {
+    #                 "prompt": {"type": "string"},
+    #                 "description": {"type": "string", "description": "Short description of the task"},
+    #             },
+    #             "required": ["prompt"],
+    #         },
+    #     },
+    # }
 ]
