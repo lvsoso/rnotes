@@ -179,6 +179,18 @@ CHILD_TOOLS = [
                 "required": ["name"],
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compact",
+            "description": "Trigger manual conversation compression.",
+            "parameters": {
+                "type": "object",
+                "properties": {"focus": {"type": "string", "description": "What to preserve in the summary"}},
+                "required": ["focus"],
+            },
+        },
     }
 ]
 

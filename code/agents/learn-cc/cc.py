@@ -1,12 +1,14 @@
 """Coding Agent 入口"""
 import json
 
-from config import WORKDIR
+from config import WORKDIR, THRESHOLD
 from llm_client import llm_client as lc
 from skills import SKILL_LOADER
 from todos import TODO
 from tools import PARENT_TOOLS, run_bash, run_read, run_write, run_edit
 from subagent import run_subagent
+from compacts import micro_compact, auto_compact, estimate_tokens
+
 
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
 Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done.
@@ -25,7 +27,8 @@ TOOL_HANDLERS = {
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
     "todo": lambda **kw: TODO.update(kw["todos"]),
     "task": lambda **kw: run_subagent(kw["prompt"]),
-    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"])
+    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
+    "compact":    lambda **kw: "Manual compression requested."
 }
 
 
@@ -34,6 +37,12 @@ def agent_loop(messages: list, max_rounds: int = 30):
     rounds_since_todo = 0
 
     for _ in range(max_rounds):
+        micro_compact(messages)
+        if estimate_tokens(messages) > THRESHOLD:
+            print("[auto_compact triggered]")
+            messages[:] = auto_compact(messages)
+        manual_compact = False
+
         response = lc.complete_result(messages, system=SYSTEM, tools=PARENT_TOOLS)
 
         used_todo = any(
@@ -84,10 +93,17 @@ def agent_loop(messages: list, max_rounds: int = 30):
                 except Exception as e:
                     output = f"Error executing {name}: {e}"
 
+            if name == "compact":
+                manual_compact = True
+
             print(f"\033[33m$ {name}\033[0m")
             print(output[:200] if len(output) > 200 else output)
 
             messages.append({"role": "tool", "tool_call_id": tc.get("id"), "content": output})
+        
+        if manual_compact:
+            print("[manual compact]")
+            messages[:] = auto_compact(messages)
 
         if rounds_since_todo >= 3:
             messages.append({

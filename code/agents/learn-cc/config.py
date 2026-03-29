@@ -16,3 +16,7 @@ LLM_TIMEOUT = os.getenv("OPENAI_TIMEOUT", 20)
 # 路径配置
 WORKDIR = Path.cwd()
 SKILLS_DIR = WORKDIR / "skills"
+
+THRESHOLD = 50000
+TRANSCRIPT_DIR = WORKDIR / ".transcripts"
+KEEP_RECENT = 3
