@@ -1,3 +1,4 @@
+from typing import List
 import json
 import os
 import subprocess
@@ -7,7 +8,50 @@ from llm_client import llm_client as lc
 
 
 WORKDIR = Path.cwd()
-SYSTEM = f"You are a coding agent at {WORKDIR}. Use bash to solve tasks. Act, don't explain."
+SYSTEM = f"""You are a coding agent at {WORKDIR}.
+Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done.
+Prefer tools over prose."""
+
+
+class TodoManager:
+    def __init__(self):
+        self.todos = []
+    
+    def update(self, todos: List) -> str:
+        if len(todos) > 20:
+            raise ValueError("Max 20 todos allowed")
+        
+        validated = []
+        in_progress_count = 0
+        for i, todo in enumerate(todos):
+            text = str(todo.get("text", "")).strip()
+            status = str(todo.get("status", "pending")).strip().lower()
+            todo_id = str(todo.get("id", str(i+1)))
+            if not text:
+                raise ValueError(f"Todo {todo_id} text cannot be empty")
+            if status not in ["pending", "in_progress", "completed"]:
+                raise ValueError(f"Todo {todo_id} status must be pending, in_progress, or completed")
+            if status == "in_progress":
+                in_progress_count += 1
+            validated.append({"text": text, "status": status, "id": todo_id})
+        if in_progress_count > 1:
+            raise ValueError("Only one todo can be in_progress")
+        self.todos = validated
+        return self.render()
+    
+    def render(self) -> str:
+        if not self.todos:
+            return "No todos."
+        lines = []
+        for todo in self.todos:
+            marker = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]"}[todo["status"]]
+            lines.append(f"{marker} #{todo['id']}: {todo['text']}")
+        done = sum(1 for t in self.todos if t["status"] == "completed")
+        lines.append(f"\n({done}/{len(self.todos)} completed)")
+        return "\n".join(lines)
+
+TODO = TodoManager()
+
 
 
 def safe_path(p: str) -> Path:
@@ -69,6 +113,7 @@ TOOL_HANDLERS = {
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "todo":       lambda **kw: TODO.update(kw["todos"]),
 }
 
 
@@ -132,12 +177,38 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "todo",
+            "description": "Update task list. Track progress on multi-step tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "text": {"type": "string"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}}, "required": ["id", "text", "status"]}}}
+                },
+                "required": ["todos"],
+            },
+    }
 ]
 
-
 def agent_loop(messages: list):
+    """Agent loop with todo reminder."""
+    rounds_since_todo = 0
+
     while True:
         response = lc.complete_result(messages, system=SYSTEM, tools=TOOLS)
+
+        # 检查本轮是否使用了 todo
+        used_todo = any(
+            tc.get("function", {}).get("name") == "todo"
+            for tc in response.tool_calls
+        )
+
+        if used_todo:
+            rounds_since_todo = 0
+        else:
+            rounds_since_todo += 1
 
         # 如果没有 tool_calls，添加回复并结束
         if not response.tool_calls:
@@ -146,7 +217,6 @@ def agent_loop(messages: list):
             return response.text
 
         # 添加 assistant 消息（包含 tool_calls）
-        # 注意：content 必须为字符串（非 None），tool_calls 格式要正确
         tool_calls_for_msg = []
         for tc in response.tool_calls:
             tool_calls_for_msg.append({
@@ -187,7 +257,13 @@ def agent_loop(messages: list):
             # 添加 tool 返回结果
             messages.append({"role": "tool", "tool_call_id": tc.get("id"), "content": output})
 
-        # 循环继续，让 LLM 基于 tool 结果生成回复
+        # 如果连续3轮没用 todo，提醒更新
+        if rounds_since_todo >= 3:
+            messages.append({
+                "role": "user",
+                "content": "<reminder>Remember to update your todos to track progress.</reminder>"
+            })
+
 
 
 if __name__ == "__main__":
