@@ -140,6 +140,7 @@ TOOL_HANDLERS = {
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
     "todo":       lambda **kw: TODO.update(kw["todos"]),
+    "task":       lambda **kw: run_subagent(kw["prompt"])
 }
 
 
