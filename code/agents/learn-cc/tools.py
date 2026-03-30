@@ -3,7 +3,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from config import WORKDIR
+from config import VALID_MSG_TYPES, WORKDIR
 
 
 def safe_path(p: str) -> Path:
@@ -284,5 +284,65 @@ PARENT_TOOLS = CHILD_TOOLS + [
                 "properties": {"task_id": {"type": "string"}},
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spawn_teammate",
+            "description": "Spawn a persistent teammate that runs in its own thread.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "role": {"type": "string"},
+                    "prompt": {"type": "string"},
+                },
+                "required": ["name", "role", "prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_teammates",
+            "description": "List all teammates with name, role, status.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message",
+            "description": "Send a message to a teammate's inbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string"},
+                    "content": {"type": "string"},
+                    "msg_type": {"type": "string", "enum": list(VALID_MSG_TYPES)},
+                },
+                "required": ["to", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_inbox",
+            "description": "Read and drain the lead's inbox.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "broadcast",
+            "description": "Send a message to all teammates.",
+            "parameters": {
+                "type": "object",
+                "properties": {"content": {"type": "string"}},
+                "required": ["content"],
+            },
+        },
+    },
 ]

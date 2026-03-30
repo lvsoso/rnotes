@@ -4,6 +4,7 @@ import json
 from config import WORKDIR, THRESHOLD
 from llm_client import llm_client as lc
 from skills import SKILL_LOADER
+from teams import BUS, TEAM
 from todos import TODO
 from tools import PARENT_TOOLS, run_bash, run_read, run_write, run_edit
 from subagent import run_subagent
@@ -35,6 +36,11 @@ TOOL_HANDLERS = {
     "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
     "background_run":   lambda **kw: BG.run(kw["command"]),
     "check_background": lambda **kw: BG.check(kw.get("task_id")),
+    "spawn_teammate":  lambda **kw: TEAM.spawn(kw["name"], kw["role"], kw["prompt"]),
+    "list_teammates":  lambda **kw: TEAM.list_all(),
+    "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
+    "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
+    "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
 }
 
 
@@ -136,6 +142,12 @@ if __name__ == "__main__":
             break
         if query.strip().lower() in ("q", "exit", "quit"):
             break
+        if query.strip() == "/team":
+            print(TEAM.list_all())
+            continue
+        if query.strip() == "/inbox":
+            print(json.dumps(BUS.read_inbox("lead"), indent=2))
+            continue
         history.append({"role": "user", "content": query})
         result = agent_loop(history)
         print()

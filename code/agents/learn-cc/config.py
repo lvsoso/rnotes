@@ -23,3 +23,15 @@ KEEP_RECENT = 3
 PRESERVE_RESULT_TOOLS = {"read_file"}
 
 TASKS_DIR = WORKDIR / ".tasks"
+
+TEAM_DIR = WORKDIR / ".team"
+INBOX_DIR = TEAM_DIR / "inbox"
+MAX_TEAMMATE_TURNS = 50
+
+VALID_MSG_TYPES = {
+    "message",
+    "broadcast",
+    "shutdown_request",
+    "shutdown_response",
+    "plan_approval_response",
+}
