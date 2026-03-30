@@ -2,11 +2,10 @@ import json
 import time
 from pathlib import Path
 import threading
+import uuid
 from config import INBOX_DIR, TEAM_DIR, WORKDIR, VALID_MSG_TYPES, MAX_TEAMMATE_TURNS
 from llm_client import llm_client as lc
-from tools import run_bash, run_edit, run_read, run_write
-
-
+from state import shutdown_requests, plan_requests, tracker_lock
 
 
 class MessageBus:
@@ -22,6 +21,8 @@ class MessageBus:
         msg_type: str = "message",
         extra: dict = None,
     ) -> str:
+        if msg_type not in VALID_MSG_TYPES:
+            return f"Error: Invalid type '{msg_type}'. Valid: {VALID_MSG_TYPES}"
         msg = {
             "type": msg_type,
             "from": sender,
@@ -97,19 +98,38 @@ class TeammateManager:
     def _teammate_loop(self, name: str, role: str, prompt: str):
         sys_prompt = (
             f"You are '{name}', role: {role}, at {WORKDIR}. "
-            f"Use send_message to communicate. Complete your task."
+            f"Submit plans via plan_approval before major work. "
+            f"Respond to shutdown_request with shutdown_response."
         )
         messages = [{"role": "user", "content": prompt}]
         tools = self._teammate_tools()
-        for _ in range(MAX_TEAMMATE_TURNS):
+        should_exit = False
+        waiting_plan_request_id = None
+        llm_turns = 0
+        while llm_turns < MAX_TEAMMATE_TURNS:
             inbox = BUS.read_inbox(name)
             for msg in inbox:
                 messages.append({"role": "user", "content": json.dumps(msg)})
+                if (
+                    waiting_plan_request_id
+                    and msg.get("type") == "plan_approval_response"
+                    and msg.get("request_id") == waiting_plan_request_id
+                ):
+                    waiting_plan_request_id = None
+
+            if should_exit:
+                break
+
+            if waiting_plan_request_id:
+                time.sleep(0.05)
+                continue
+
             try:
                 response = lc.complete_result(messages, system=sys_prompt, tools=tools)
             except Exception as e:
                 print(f"[ERROR] {name}: LLM error - {e}")
                 break
+            llm_turns += 1
 
             if not response.tool_calls:
                 print(response.text)
@@ -154,6 +174,15 @@ class TeammateManager:
                     except Exception as e:
                         output = f"Error executing {func_name}: {e}"
 
+                if func_name == "plan_approval" and not output.startswith("Error:"):
+                    try:
+                        waiting_plan_request_id = json.loads(output)["request_id"]
+                    except (json.JSONDecodeError, KeyError, TypeError):
+                        output = "Error: Invalid plan approval response payload"
+
+                if func_name == "shutdown_response" and args.get("approve"):
+                    should_exit = True
+
                 messages.append(
                     {"role": "tool", "tool_call_id": tc.get("id"), "content": output}
                 )
@@ -164,7 +193,7 @@ class TeammateManager:
             self._save_config()
 
     def _exec(self, sender: str, tool_name: str, args: dict) -> str:
-        # these base tools are unchanged from s02
+        from tools import run_bash, run_edit, run_read, run_write
         if tool_name == "bash":
             return run_bash(args["command"])
         if tool_name == "read_file":
@@ -179,6 +208,35 @@ class TeammateManager:
             )
         if tool_name == "read_inbox":
             return json.dumps(BUS.read_inbox(sender), indent=2)
+
+        if tool_name == "shutdown_response":
+            req_id = args["request_id"]
+            approve = args["approve"]
+            with tracker_lock:
+                if req_id in shutdown_requests:
+                    shutdown_requests[req_id]["status"] = "approved" if approve else "rejected"
+            BUS.send(
+                sender, "lead", args.get("reason", ""),
+                "shutdown_response", {"request_id": req_id, "approve": approve},
+            )
+            return f"Shutdown {'approved' if approve else 'rejected'}"
+
+        if tool_name == "plan_approval":
+            plan_text = args.get("plan", "")
+            req_id = str(uuid.uuid4())[:8]
+            with tracker_lock:
+                plan_requests[req_id] = {"from": sender, "plan": plan_text, "status": "pending"}
+            BUS.send(
+                sender, "lead", plan_text, "plan_approval_request",
+                {"request_id": req_id, "plan": plan_text},
+            )
+            return json.dumps(
+                {
+                    "request_id": req_id,
+                    "status": "pending",
+                    "message": "Plan submitted. Waiting for lead approval.",
+                }
+            )
         return f"Unknown tool: {tool_name}"
 
     def _teammate_tools(self) -> list:
@@ -304,6 +362,34 @@ class TeammateManager:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "shutdown_response",
+                    "description": "Respond to a shutdown request. Approve to shut down, reject to keep working.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "request_id": {"type": "string"},
+                            "approve": {"type": "boolean"},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["request_id", "approve"],
+                    },
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "plan_approval",
+                    "description": "Submit a plan for lead approval. Provide plan text.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"plan": {"type": "string"}},
+                        "required": ["plan"],
+                    },
+                },
+            }
         ]
 
     def list_all(self) -> str:

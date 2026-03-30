@@ -4,8 +4,6 @@ import json
 from config import WORKDIR
 from llm_client import llm_client as lc
 from skills import SKILL_LOADER
-from tools import CHILD_TOOLS, run_bash, run_read, run_write, run_edit
-from todos import TODO
 
 SUBAGENT_SYSTEM = f"""You are a coding subagent at {WORKDIR}.
 Complete the given task, then summarize your findings.
@@ -15,17 +13,27 @@ Skills available:
 """
 
 
-TOOL_HANDLERS = {
-    "bash": lambda **kw: run_bash(kw["command"]),
-    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    # "todo": lambda **kw: TODO.update(kw["todos"]),
-    # "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"])
-}
+def _get_handlers():
+    """延迟导入避免循环导入"""
+    from tools import run_bash, run_read, run_write, run_edit
+    return {
+        "bash": lambda **kw: run_bash(kw["command"]),
+        "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
+        "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
+        "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    }
+
+
+def _get_child_tools():
+    """延迟导入避免循环导入"""
+    from tools import CHILD_TOOLS
+    return CHILD_TOOLS
 
 
 def run_subagent(prompt: str) -> str:
+    TOOL_HANDLERS = _get_handlers()
+    CHILD_TOOLS = _get_child_tools()
+
     sub_messages = [{"role": "user", "content": prompt}]
     for _ in range(30):
         response = lc.complete_result(sub_messages, system=SUBAGENT_SYSTEM, tools=CHILD_TOOLS)

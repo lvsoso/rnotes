@@ -1,15 +1,14 @@
 """Coding Agent 入口"""
 import json
+import uuid
 
 from config import WORKDIR, THRESHOLD
 from llm_client import llm_client as lc
 from skills import SKILL_LOADER
+from tools import TOOL_HANDLERS
 from teams import BUS, TEAM
-from todos import TODO
-from tools import PARENT_TOOLS, run_bash, run_read, run_write, run_edit
-from subagent import run_subagent
-from compacts import micro_compact, auto_compact, estimate_tokens
-from tasks import TASKS
+from tools import PARENT_TOOLS
+from compacts import estimate_tokens, micro_compact, auto_compact
 from background import BG
 
 
@@ -20,28 +19,6 @@ Skills available:
 {SKILL_LOADER.get_descriptions()}
 """
 
-
-TOOL_HANDLERS = {
-    "bash": lambda **kw: run_bash(kw["command"]),
-    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "todo": lambda **kw: TODO.update(kw["todos"]),
-    "task": lambda **kw: run_subagent(kw["prompt"]),
-    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
-    "compact":    lambda **kw: "Manual compression requested.",
-    "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
-    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("add_blocked_by"), kw.get("add_blocks")),
-    "task_list":   lambda **kw: TASKS.list_all(),
-    "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
-    "background_run":   lambda **kw: BG.run(kw["command"]),
-    "check_background": lambda **kw: BG.check(kw.get("task_id")),
-    "spawn_teammate":  lambda **kw: TEAM.spawn(kw["name"], kw["role"], kw["prompt"]),
-    "list_teammates":  lambda **kw: TEAM.list_all(),
-    "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
-    "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
-    "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
-}
 
 
 def agent_loop(messages: list, max_rounds: int = 30):
@@ -61,6 +38,13 @@ def agent_loop(messages: list, max_rounds: int = 30):
                 f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs
             )
             messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>"})
+
+        inbox = BUS.read_inbox("lead")
+        if inbox:
+            messages.append({
+                "role": "user",
+                "content": f"<inbox>{json.dumps(inbox, indent=2)}</inbox>",
+            })
 
         response = lc.complete_result(messages, system=SYSTEM, tools=PARENT_TOOLS)
 

@@ -1,9 +1,19 @@
 """工具函数和定义"""
+import json
 import re
 import subprocess
 from pathlib import Path
+import uuid
 
 from config import VALID_MSG_TYPES, WORKDIR
+
+from skills import SKILL_LOADER
+from subagent import run_subagent
+from tasks import TASKS
+from background import BG
+from todos import TODO
+from teams import BUS, TEAM
+from state import shutdown_requests, plan_requests, tracker_lock
 
 
 def safe_path(p: str) -> Path:
@@ -82,6 +92,69 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
         return f"Error: {e}"
     except Exception as e:
         return f"Error: {e}"
+
+
+def handle_shutdown_request(teammate: str) -> str:
+    member = TEAM._find_member(teammate)
+    if not member:
+        return f"Error: Unknown teammate '{teammate}'"
+    if member["status"] == "shutdown":
+        return f"Error: Teammate '{teammate}' is already shutdown"
+
+    req_id = str(uuid.uuid4())[:8]
+    with tracker_lock:
+        shutdown_requests[req_id] = {"target": teammate, "status": "pending"}
+    BUS.send(
+        "lead", teammate, "Please shut down gracefully.",
+        "shutdown_request", {"request_id": req_id},
+    )
+    return f"Shutdown request {req_id} sent to '{teammate}' (status: pending)"
+
+
+def handle_plan_review(request_id: str, approve: bool, feedback: str = "") -> str:
+    with tracker_lock:
+        req = plan_requests.get(request_id)
+    if not req:
+        return f"Error: Unknown plan request_id '{request_id}'"
+    with tracker_lock:
+        req["status"] = "approved" if approve else "rejected"
+    BUS.send(
+        "lead", req["from"], feedback, "plan_approval_response",
+        {"request_id": request_id, "approve": approve, "feedback": feedback},
+    )
+    return f"Plan {req['status']} for '{req['from']}'"
+
+
+def _check_shutdown_status(request_id: str) -> str:
+    with tracker_lock:
+        return json.dumps(shutdown_requests.get(request_id, {"error": "not found"}))
+
+
+TOOL_HANDLERS = {
+    "bash": lambda **kw: run_bash(kw["command"]),
+    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "todo": lambda **kw: TODO.update(kw["todos"]),
+    "task": lambda **kw: run_subagent(kw["prompt"]),
+    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
+    "compact":    lambda **kw: "Manual compression requested.",
+    "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
+    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("add_blocked_by"), kw.get("add_blocks")),
+    "task_list":   lambda **kw: TASKS.list_all(),
+    "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
+    "background_run":   lambda **kw: BG.run(kw["command"]),
+    "check_background": lambda **kw: BG.check(kw.get("task_id")),
+    "spawn_teammate":  lambda **kw: TEAM.spawn(kw["name"], kw["role"], kw["prompt"]),
+    "list_teammates":  lambda **kw: TEAM.list_all(),
+    "send_message":    lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
+    "read_inbox":      lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
+    "broadcast":       lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
+    "shutdown_request":  lambda **kw: handle_shutdown_request(kw["teammate"]),
+    "shutdown_response": lambda **kw: _check_shutdown_status(kw.get("request_id", "")),
+    "plan_approval":     lambda **kw: handle_plan_review(kw["request_id"], kw["approve"], kw.get("feedback", "")),
+}
+
 
 
 CHILD_TOOLS = [
@@ -345,4 +418,44 @@ PARENT_TOOLS = CHILD_TOOLS + [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "shutdown_request",
+            "description": "Request a teammate to shut down gracefully. Returns a request_id for tracking.",
+            "parameters": {
+                "type": "object",
+                "properties": {"teammate": {"type": "string"}},
+                "required": ["teammate"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shutdown_response",
+            "description": "Check the status of a shutdown request by request_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {"request_id": {"type": "string"}},
+                "required": ["request_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_approval",
+            "description": "Approve or reject a teammate's plan. Provide request_id + approve + optional feedback.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "request_id": {"type": "string"},
+                    "approve": {"type": "boolean"},
+                    "feedback": {"type": "string"},
+                },
+                "required": ["request_id", "approve"],
+            },
+        },
+    }
 ]
