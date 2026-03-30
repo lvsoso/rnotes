@@ -142,32 +142,50 @@ CHILD_TOOLS = [
                 "required": ["path", "old_text", "new_text"],
             },
         },
+    }
+]
+
+PARENT_TOOLS = CHILD_TOOLS + [
+    {
+        "type": "function",
+        "function": {
+            "name": "task",
+            "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "description": {"type": "string", "description": "Short description of the task"},
+                },
+                "required": ["prompt"],
+            },
+        },
     },
-    # {
-    #     "type": "function",
-    #     "function": {
-    #         "name": "todo",
-    #         "description": "Update task list. Track progress on multi-step tasks.",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {
-    #                 "todos": {
-    #                     "type": "array",
-    #                     "items": {
-    #                         "type": "object",
-    #                         "properties": {
-    #                             "id": {"type": "string"},
-    #                             "text": {"type": "string"},
-    #                             "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
-    #                         },
-    #                         "required": ["id", "text", "status"]
-    #                     }
-    #                 }
-    #             },
-    #             "required": ["todos"]
-    #         }
-    #     }
-    # },
+    {
+        "type": "function",
+        "function": {
+            "name": "todo",
+            "description": "Update task list. Track progress on multi-step tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "text": {"type": "string"},
+                                "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}
+                            },
+                            "required": ["id", "text", "status"]
+                        }
+                    }
+                },
+                "required": ["todos"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -244,22 +262,27 @@ CHILD_TOOLS = [
             },
         },
     },
-]
-
-PARENT_TOOLS = CHILD_TOOLS + [
-    # {
-    #     "type": "function",
-    #     "function": {
-    #         "name": "task",
-    #         "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {
-    #                 "prompt": {"type": "string"},
-    #                 "description": {"type": "string", "description": "Short description of the task"},
-    #             },
-    #             "required": ["prompt"],
-    #         },
-    #     },
-    # }
+    {
+        "type": "function",
+        "function": {
+            "name": "background_run",
+            "description": "Run command in background thread. Returns task_id immediately.",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_background",
+            "description": "Check background task status. Omit task_id to list all.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task_id": {"type": "string"}},
+            },
+        },
+    }
 ]

@@ -9,6 +9,7 @@ from tools import PARENT_TOOLS, run_bash, run_read, run_write, run_edit
 from subagent import run_subagent
 from compacts import micro_compact, auto_compact, estimate_tokens
 from tasks import TASKS
+from background import BG
 
 
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
@@ -32,6 +33,8 @@ TOOL_HANDLERS = {
     "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("add_blocked_by"), kw.get("add_blocks")),
     "task_list":   lambda **kw: TASKS.list_all(),
     "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
+    "background_run":   lambda **kw: BG.run(kw["command"]),
+    "check_background": lambda **kw: BG.check(kw.get("task_id")),
 }
 
 
@@ -45,6 +48,13 @@ def agent_loop(messages: list, max_rounds: int = 30):
             print("[auto_compact triggered]")
             messages[:] = auto_compact(messages)
         manual_compact = False
+
+        notifs = BG.drain_notifications()
+        if notifs and messages:
+            notif_text = "\n".join(
+                f"[bg:{n['task_id']}] {n['status']}: {n['result']}" for n in notifs
+            )
+            messages.append({"role": "user", "content": f"<background-results>\n{notif_text}\n</background-results>"})
 
         response = lc.complete_result(messages, system=SYSTEM, tools=PARENT_TOOLS)
 
