@@ -126,6 +126,9 @@ if __name__ == "__main__":
             break
         if query.strip().lower() in ("q", "exit", "quit"):
             break
+        if query.strip() == "/compact":
+            history[:] = auto_compact(history)
+            continue
         if query.strip() == "/team":
             print(TEAM.list_all())
             continue
