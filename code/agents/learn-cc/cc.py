@@ -12,10 +12,8 @@ from tasks import TASKS
 
 
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
-Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done.
-Prefer tools over prose.
-Use the task tool to delegate exploration or subtasks.
-
+Prefer task_create/task_update/task_list for multi-step work. Use TodoWrite for short checklists.
+Use task for subagent delegation. Use load_skill for specialized knowledge.
 Skills available:
 {SKILL_LOADER.get_descriptions()}
 """
@@ -26,8 +24,8 @@ TOOL_HANDLERS = {
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    # "todo": lambda **kw: TODO.update(kw["todos"]),
-    # "task": lambda **kw: run_subagent(kw["prompt"]),
+    "todo": lambda **kw: TODO.update(kw["todos"]),
+    "task": lambda **kw: run_subagent(kw["prompt"]),
     "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
     "compact":    lambda **kw: "Manual compression requested.",
     "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),

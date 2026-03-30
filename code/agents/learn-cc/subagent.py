@@ -20,8 +20,8 @@ TOOL_HANDLERS = {
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "todo": lambda **kw: TODO.update(kw["todos"]),
-    "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"])
+    # "todo": lambda **kw: TODO.update(kw["todos"]),
+    # "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"])
 }
 
 
