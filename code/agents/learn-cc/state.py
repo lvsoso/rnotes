@@ -4,3 +4,4 @@ import threading
 shutdown_requests = {}
 plan_requests = {}
 tracker_lock = threading.Lock()
+claim_lock = threading.Lock()

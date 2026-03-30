@@ -2,7 +2,7 @@
 import json
 import uuid
 
-from config import WORKDIR, THRESHOLD
+from config import TASKS_DIR, WORKDIR, THRESHOLD
 from llm_client import llm_client as lc
 from skills import SKILL_LOADER
 from tools import TOOL_HANDLERS
@@ -131,6 +131,15 @@ if __name__ == "__main__":
             continue
         if query.strip() == "/inbox":
             print(json.dumps(BUS.read_inbox("lead"), indent=2))
+            continue
+        if query.strip() == "/tasks":
+            TASKS_DIR.mkdir(exist_ok=True)
+            for f in sorted(TASKS_DIR.glob("task_*.json"), 
+                            key=lambda f: int(f.stem.split("_")[1])):
+                t = json.loads(f.read_text())
+                marker = {"pending": "[ ]", "in_progress": "[>]", "completed": "[x]"}.get(t["status"], "[?]")
+                owner = f" @{t['owner']}" if t.get("owner") else ""
+                print(f"  {marker} #{t['id']}: {t['subject']}{owner}")
             continue
         history.append({"role": "user", "content": query})
         result = agent_loop(history)

@@ -35,3 +35,7 @@ VALID_MSG_TYPES = {
     "shutdown_response",
     "plan_approval_response",
 }
+
+
+POLL_INTERVAL = 5
+IDLE_TIMEOUT = 120

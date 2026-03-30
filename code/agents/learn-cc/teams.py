@@ -3,9 +3,9 @@ import time
 from pathlib import Path
 import threading
 import uuid
-from config import INBOX_DIR, TEAM_DIR, WORKDIR, VALID_MSG_TYPES, MAX_TEAMMATE_TURNS
+from config import IDLE_TIMEOUT, INBOX_DIR, POLL_INTERVAL, TASKS_DIR, TEAM_DIR, WORKDIR, VALID_MSG_TYPES, MAX_TEAMMATE_TURNS
 from llm_client import llm_client as lc
-from state import shutdown_requests, plan_requests, tracker_lock
+from state import shutdown_requests, plan_requests, tracker_lock, claim_lock
 
 
 class MessageBus:
@@ -52,6 +52,45 @@ class MessageBus:
         return f"Broadcast to {count} teammates"
 
 
+def scan_unclaimed_tasks() -> list:
+    TASKS_DIR.mkdir(exist_ok=True)
+    unclaimed = []
+    for f in sorted(TASKS_DIR.glob("task_*.json")):
+        task = json.loads(f.read_text())
+        if (task.get("status") == "pending"
+                and not task.get("owner")
+                and not task.get("blockedBy")):
+            unclaimed.append(task)
+    return unclaimed
+
+
+def claim_task(task_id: int, owner: str) -> str:
+    with claim_lock:
+        path = TASKS_DIR / f"task_{task_id}.json"
+        if not path.exists():
+            return f"Error: Task {task_id} not found"
+        task = json.loads(path.read_text())
+        if task.get("owner"):
+            existing_owner = task.get("owner") or "someone else"
+            return f"Error: Task {task_id} has already been claimed by {existing_owner}"
+        if task.get("status") != "pending":
+            status = task.get("status")
+            return f"Error: Task {task_id} cannot be claimed because its status is '{status}'"
+        if task.get("blockedBy"):
+            return f"Error: Task {task_id} is blocked by other task(s) and cannot be claimed yet"
+        task["owner"] = owner
+        task["status"] = "in_progress"
+        path.write_text(json.dumps(task, indent=2))
+    return f"Claimed task #{task_id} for {owner}"
+
+
+def make_identity_block(name: str, role: str, team_name: str) -> dict:
+    return {
+        "role": "user",
+        "content": f"<identity>You are '{name}', role: {role}, team: {team_name}. Continue your work.</identity>",
+    }
+
+
 class TeammateManager:
 
     def __init__(self, team_dir: Path) -> None:
@@ -75,6 +114,12 @@ class TeammateManager:
                 return m
         return None
 
+    def _set_status(self, name: str, status: str):
+        member = self._find_member(name)
+        if member:
+            member["status"] = status
+            self._save_config()
+
     def spawn(self, name: str, role: str, prompt: str) -> str:
         member = self._find_member(name)
         if member:
@@ -96,101 +141,148 @@ class TeammateManager:
         return f"Spawned '{name}' (role: {role})"
 
     def _teammate_loop(self, name: str, role: str, prompt: str):
+        team_name = self.config["team_name"]
         sys_prompt = (
-            f"You are '{name}', role: {role}, at {WORKDIR}. "
-            f"Submit plans via plan_approval before major work. "
-            f"Respond to shutdown_request with shutdown_response."
+            f"You are '{name}', role: {role}, team: {team_name}, at {WORKDIR}. "
+            f"Use idle tool when you have no more work. You will auto-claim new tasks."
         )
         messages = [{"role": "user", "content": prompt}]
         tools = self._teammate_tools()
-        should_exit = False
-        waiting_plan_request_id = None
-        llm_turns = 0
-        while llm_turns < MAX_TEAMMATE_TURNS:
-            inbox = BUS.read_inbox(name)
-            for msg in inbox:
-                messages.append({"role": "user", "content": json.dumps(msg)})
-                if (
-                    waiting_plan_request_id
-                    and msg.get("type") == "plan_approval_response"
-                    and msg.get("request_id") == waiting_plan_request_id
-                ):
-                    waiting_plan_request_id = None
+        
+        while True:
+            idle_requested = False
+            should_exit = False
+            waiting_plan_request_id = None
+            llm_turns = 0
+            while llm_turns < MAX_TEAMMATE_TURNS:
+                inbox = BUS.read_inbox(name)
+                for msg in inbox:
+                    messages.append({"role": "user", "content": json.dumps(msg)})
+                    if (
+                        waiting_plan_request_id
+                        and msg.get("type") == "plan_approval_response"
+                        and msg.get("request_id") == waiting_plan_request_id
+                    ):
+                        waiting_plan_request_id = None
 
-            if should_exit:
-                break
+                if should_exit:
+                    break
 
-            if waiting_plan_request_id:
-                time.sleep(0.05)
-                continue
+                if waiting_plan_request_id:
+                    time.sleep(0.05)
+                    continue
 
-            try:
-                response = lc.complete_result(messages, system=sys_prompt, tools=tools)
-            except Exception as e:
-                print(f"[ERROR] {name}: LLM error - {e}")
-                break
-            llm_turns += 1
+                try:
+                    response = lc.complete_result(messages, system=sys_prompt, tools=tools)
+                except Exception as e:
+                    print(f"[ERROR] {name}: LLM error - {e}")
+                    break
+                llm_turns += 1
 
-            if not response.tool_calls:
-                print(response.text)
-                messages.append({"role": "assistant", "content": response.text})
-                break
+                if not response.tool_calls:
+                    print(response.text)
+                    messages.append({"role": "assistant", "content": response.text})
+                    break
 
-            tool_calls_for_msg = []
-            for tc in response.tool_calls:
-                tool_calls_for_msg.append(
+                tool_calls_for_msg = []
+                for tc in response.tool_calls:
+                    tool_calls_for_msg.append(
+                        {
+                            "id": tc.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("function", {}).get("name"),
+                                "arguments": tc.get("function", {}).get("arguments", "{}"),
+                            },
+                        }
+                    )
+
+                messages.append(
                     {
-                        "id": tc.get("id"),
-                        "type": "function",
-                        "function": {
-                            "name": tc.get("function", {}).get("name"),
-                            "arguments": tc.get("function", {}).get("arguments", "{}"),
-                        },
+                        "role": "assistant",
+                        "content": response.text or "",
+                        "tool_calls": tool_calls_for_msg,
                     }
                 )
 
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": response.text or "",
-                    "tool_calls": tool_calls_for_msg,
-                }
-            )
+                for tc in response.tool_calls or []:
+                    func = tc.get("function", {})
+                    func_name = func.get("name")
+                    args_str = func.get("arguments", "{}")
 
-            for tc in response.tool_calls or []:
-                func = tc.get("function", {})
-                func_name = func.get("name")
-                args_str = func.get("arguments", "{}")
+                    try:
+                        args = (
+                            json.loads(args_str) if isinstance(args_str, str) else args_str
+                        )
+                    except json.JSONDecodeError as e:
+                        output = f"Error: Invalid arguments JSON - {e}"
+                    else:
+                        try:
+                            output = self._exec(name, func_name, args)
+                        except Exception as e:
+                            output = f"Error executing {func_name}: {e}"
 
-                try:
-                    args = (
-                        json.loads(args_str) if isinstance(args_str, str) else args_str
+                    if func_name == "plan_approval" and not output.startswith("Error:"):
+                        try:
+                            waiting_plan_request_id = json.loads(output)["request_id"]
+                        except (json.JSONDecodeError, KeyError, TypeError):
+                            output = "Error: Invalid plan approval response payload"
+
+                    if func_name == "shutdown_response" and args.get("approve"):
+                        should_exit = True
+                        
+                    if func_name == "idle":
+                        idle_requested = True
+
+                    messages.append(
+                        {"role": "tool", "tool_call_id": tc.get("id"), "content": output}
                     )
-                except json.JSONDecodeError as e:
-                    output = f"Error: Invalid arguments JSON - {e}"
-                else:
-                    try:
-                        output = self._exec(name, func_name, args)
-                    except Exception as e:
-                        output = f"Error executing {func_name}: {e}"
+                    if idle_requested:
+                        break
 
-                if func_name == "plan_approval" and not output.startswith("Error:"):
-                    try:
-                        waiting_plan_request_id = json.loads(output)["request_id"]
-                    except (json.JSONDecodeError, KeyError, TypeError):
-                        output = "Error: Invalid plan approval response payload"
+            # 只有显式 should_exit 才真正退出，否则默认进入 idle 轮询
+            if should_exit:
+                self._set_status(name, "shutdown")
+                return
 
-                if func_name == "shutdown_response" and args.get("approve"):
-                    should_exit = True
+            # 默认进入 idle 轮询，等待新任务或消息
+            idle_requested = True
+            resume = False
+            polls = IDLE_TIMEOUT // max(POLL_INTERVAL, 1)
+            for _ in range(polls):
+                time.sleep(POLL_INTERVAL)
+                inbox = BUS.read_inbox(name)
+                if inbox:
+                    for msg in inbox:
+                        if msg.get("type") == "shutdown_request":
+                            self._set_status(name, "shutdown")
+                            return
+                        messages.append({"role": "user", "content": json.dumps(msg)})
+                    resume = True
+                    break
+                unclaimed = scan_unclaimed_tasks()
+                if unclaimed:
+                    task = unclaimed[0]
+                    result = claim_task(task["id"], name)
+                    if result.startswith("Error:"):
+                        continue
+                    task_prompt = (
+                        f"<auto-claimed>Task #{task['id']}: {task['subject']}\n"
+                        f"{task.get('description', '')}</auto-claimed>"
+                    )
+                    if len(messages) <= 3:
+                        messages.insert(0, make_identity_block(name, role, team_name))
+                        messages.insert(1, {"role": "assistant", "content": f"I am {name}. Continuing."})
+                    messages.append({"role": "user", "content": task_prompt})
+                    messages.append({"role": "assistant", "content": f"Claimed task #{task['id']}. Working on it."})
+                    resume = True
+                    break
 
-                messages.append(
-                    {"role": "tool", "tool_call_id": tc.get("id"), "content": output}
-                )
-
-        member = self._find_member(name)
-        if member and member["status"] != "shutdown":
-            member["status"] = "idle"
-            self._save_config()
+            if not resume:
+                # 超时 120 秒后退出 idle
+                self._set_status(name, "shutdown")
+                return
+            self._set_status(name, "working")
 
     def _exec(self, sender: str, tool_name: str, args: dict) -> str:
         from tools import run_bash, run_edit, run_read, run_write
@@ -237,6 +329,8 @@ class TeammateManager:
                     "message": "Plan submitted. Waiting for lead approval.",
                 }
             )
+        if tool_name == "claim_task":
+            return claim_task(args["task_id"], sender)
         return f"Unknown tool: {tool_name}"
 
     def _teammate_tools(self) -> list:
@@ -387,6 +481,26 @@ class TeammateManager:
                         "type": "object",
                         "properties": {"plan": {"type": "string"}},
                         "required": ["plan"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "idle",
+                    "description": "Signal that you have no more work. Enters idle polling phase.",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "claim_task",
+                    "description": "Claim a task from the task board by ID.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"task_id": {"type": "integer"}},
+                        "required": ["task_id"],
                     },
                 },
             }

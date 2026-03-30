@@ -130,6 +130,11 @@ def _check_shutdown_status(request_id: str) -> str:
         return json.dumps(shutdown_requests.get(request_id, {"error": "not found"}))
 
 
+def claim_task(task_id: int, owner: str) -> str:
+    from teams import claim_task
+    return claim_task(task_id, owner)
+
+
 TOOL_HANDLERS = {
     "bash": lambda **kw: run_bash(kw["command"]),
     "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
@@ -153,6 +158,8 @@ TOOL_HANDLERS = {
     "shutdown_request":  lambda **kw: handle_shutdown_request(kw["teammate"]),
     "shutdown_response": lambda **kw: _check_shutdown_status(kw.get("request_id", "")),
     "plan_approval":     lambda **kw: handle_plan_review(kw["request_id"], kw["approve"], kw.get("feedback", "")),
+    "idle":              lambda **kw: "Lead does not idle.",
+    "claim_task":        lambda **kw: claim_task(kw["task_id"], "lead"),
 }
 
 
@@ -455,6 +462,26 @@ PARENT_TOOLS = CHILD_TOOLS + [
                     "feedback": {"type": "string"},
                 },
                 "required": ["request_id", "approve"],
+            },
+        },
+    },
+    {
+      "type": "function",
+        "function": {
+            "name": "idle",
+            "description": "Enter idle state (for lead -- rarely used).",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "claim_task",
+            "description": "Claim a task from the board by ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task_id": {"type": "integer"}},
+                "required": ["task_id"],
             },
         },
     }
