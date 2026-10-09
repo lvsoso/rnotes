@@ -1,0 +1,63 @@
+Jev / Laya dependency notes — checked 2026-10-03
+
+A. Canonical Laya inference
+Python >=3.10 (Laya 0.3.24 declared minimum; Python 3.11 is not mandatory).
+laya==0.3.24
+Official declared runtime requirements include:
+  torch>=2.0.0
+  transformers>=4.48.0
+  safetensors>=0.4.0
+  huggingface_hub>=0.20.0
+  numpy>=1.20.0
+Source: https://raw.githubusercontent.com/NandhaKishorM/laya/v0.3.24/pyproject.toml
+These are lower bounds, not a fully tested lock of every newer package version.
+No torchvision/torchaudio is required for this text-only routing experiment.
+
+The user checked this AutoDL base environment:
+  Python 3.12.3; torch 2.12.1+cu130; RTX 4090 D 24GB
+  NVIDIA driver 595.71.05; nvidia-smi CUDA 13.2
+  torch.version.cuda=13.0; torch.cuda.is_available()=True
+  GPU matrix computation succeeded
+This confirms the underlying GPU path only. Laya inference/training has not
+been validated by that check. There is no reason to downgrade the working
+torch merely to match an older recommendation or nvidia-smi CUDA number.
+The nvidia-smi CUDA field is driver capability; torch.version.cuda describes
+the runtime used by the PyTorch build. They need not have identical numbers.
+For a fresh environment, install an official compatible PyTorch build only
+when needed, then repeat CUDA checks. Record resolved versions with pip freeze.
+Save the original environment lock before installing additional packages.
+
+B. Cookbook training
+Use a separate interpreter/environment where practical and never confuse the
+runtime/laya working package with the canonical Laya SDK.
+Pinned cookbook commit: 6d0efb86c5673394bba50bb1c35ad10329e12890
+Its main/10_本地模型/requirements.txt declares:
+  torch>=2.4
+  transformers>=4.45
+  safetensors>=0.4
+  numpy>=1.26
+  peft>=0.17
+The cookbook transformers>=4.45 bound is NOT canonical Laya's requirement.
+The guide adds transformers>=4.48.0 to avoid adopting the weaker bound as a
+shared baseline. This still requires actual import, inference and training
+checks; it is not a claim that every newer transformers version will work.
+Install modelscope-hub only for the documented model download.
+
+The guide's optional --system-site-packages training venv reuses the already
+working AutoDL torch; it is not fully isolated. Recheck CUDA and pip check
+inside it. For complete isolation omit that option, independently install the
+needed dependencies, and rerun the checks. Do not mix canonical SDK imports
+with the cookbook package path in the same running Python process.
+
+C. Optional hosted APIs
+  typesafe-sdk==0.7.2 — Jev API only, no torch required
+  system-one-adapter[openai] — optional upstream LLM example
+Configure approved credentials safely on your machine. No keys in screenshots.
+
+D. Standard-library-only helpers
+prepare_demo.py, validate_splits.py, metrics.py, evaluate.py,
+fit_temperature.py, selftest.py require no third-party packages.
+run_laya.py imports Laya/cookbook and torch only when executed.
+run_jev.py imports typesafe_sdk only when executed.
+The ZIP does not install an environment. CPU remains run_laya.py's default;
+explicitly pass --device cuda for the tested NVIDIA server.

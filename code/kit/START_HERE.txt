@@ -1,0 +1,46 @@
+先从这里开始
+
+这是一套用于学习意图路由的合成题库：请求是题目，五类入口是参考答案。
+你不需要自己再制作数据，也不需要把题库粘贴到代码中。
+
+1. 把 ZIP 解压到一个新文件夹 jev-lab，确认里面有 kit/。
+2. 在服务器终端 cd 到 jev-lab。以下路径均以此为起点。
+3. 先打开 kit/data/tutorial/data_preview.csv 看文本、标签、标注理由。
+   正式执行只读 JSONL；CSV 便于人阅读，不要改了 CSV 却以为 JSONL 同步改变。
+4. 校验题库（不加载模型，不调用 API）：
+   python kit/validate_tutorial.py --dir kit/data/tutorial
+   python kit/selftest.py
+5. 阅读新版指导第 03、06 节，先跑 10 条 smoke，确认 Laya 在 CUDA 正常。
+6. 按第 08 节准备 cookbook 训练环境和 checkpoint，再做第 09 节 head-only。
+
+文件作用
+- train.jsonl 150 条：学习用
+- dev.jsonl 50 条：挑 checkpoint/调配置用
+- calibration.jsonl 50 条：拟合温度和选门槛用
+- test.jsonl 50 条：锁定方案后最后比较用
+- train-dev.jsonl 200 条：训练入口实际读取的合并文件，保留 split 字段
+- challenge.jsonl 20 条：难例演示，单独记结果，不混进 test 总分
+
+所有 JSONL 和 CSV 都在 kit/data/tutorial/；manifest.json 记录数量和文件哈希。
+每条 metadata 中有合成来源、标注理由。它们不会传给推理模型。
+不要把参考答案 y 或 rationale 放进 state。训练时 y 由训练器作为监督目标读取。
+
+训练参数的重要区别
+新版第 09 节已使用 kit/data/tutorial/train-dev.jsonl 并加上：
+  --allow-assistant-reviewed-pilot
+这是上游为明确的合成教学样本提供的许可。不要把 review_status 改为
+human_reviewed 假装完成了人工审核。真实业务数据仍需人工审核和原验证器。
+
+先在 dev 上观察原始模型/微调模型。配置冻结后才对同一 test 比较。
+不要一边反复看 test 分数，一边选参数，否则 test 已经不再是最终测试。
+50 条 calibration/test 很小，统计波动会很大；不是上线资格证。
+
+截图
+指导里看到“此处截图”时再截图，保留 E01–E06 编号；每张写明“合成教学数据”。
+E02 看实际输出，E03 看实际训练曲线，E04/E05 看真实指标，E06 留真实失败或澄清例。
+配套程序仅预测路由，不执行发消息、下单、删文件等工具。
+
+已完成的验证范围
+本包完成字段/ID/组隔离/重复检查、脚本静态编译和基础算术自测。
+已静态核对固定 cookbook commit 的训练加载和 choice 字段路径。
+尚未代你执行真实 GPU 推理、训练、模型下载或付费 API。

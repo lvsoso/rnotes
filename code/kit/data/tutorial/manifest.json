@@ -1,0 +1,110 @@
+{
+  "dataset": "Jev five-intent synthetic tutorial",
+  "version": "tutorial-intent-v1.0",
+  "created_utc": "2026-10-03",
+  "review_status": "assistant_reviewed_pilot",
+  "reviewer": "AI-generated tutorial; not human-reviewed",
+  "label_source": "synthetic_tutorial",
+  "warning": "Educational synthetic pilot only. Not human-reviewed and not a benchmark. Passing this validator does not establish semantic independence, label correctness, calibration reliability, or production suitability.",
+  "candidate_order": [
+    "digital_human",
+    "translation",
+    "agent_workflow",
+    "clarify",
+    "other"
+  ],
+  "total_records_including_challenge": 320,
+  "total_groups": 299,
+  "splits": {
+    "train": {
+      "records": 150,
+      "groups": 144,
+      "class_counts": {
+        "digital_human": 30,
+        "translation": 30,
+        "agent_workflow": 30,
+        "clarify": 30,
+        "other": 30
+      },
+      "language_counts": {
+        "en": 25,
+        "es": 1,
+        "zh": 124
+      },
+      "sha256": "1a6fb0c7ae6ae35e8aee8066816f28f456f3af9ffb55de1779c5b5af2c8ead41"
+    },
+    "dev": {
+      "records": 50,
+      "groups": 45,
+      "class_counts": {
+        "digital_human": 10,
+        "translation": 10,
+        "agent_workflow": 10,
+        "clarify": 10,
+        "other": 10
+      },
+      "language_counts": {
+        "en": 10,
+        "fr": 1,
+        "zh": 39
+      },
+      "sha256": "1ba570d81cf6abf716cd68e8848a6602fd1615affbf1b3c5cf4edeaaee453d93"
+    },
+    "calibration": {
+      "records": 50,
+      "groups": 45,
+      "class_counts": {
+        "digital_human": 10,
+        "translation": 10,
+        "agent_workflow": 10,
+        "clarify": 10,
+        "other": 10
+      },
+      "language_counts": {
+        "en": 10,
+        "zh": 40
+      },
+      "sha256": "162ff977c93f0efdc22e036427c732e3e7d09c8cec0e096d919a39da19022e62"
+    },
+    "test": {
+      "records": 50,
+      "groups": 45,
+      "class_counts": {
+        "digital_human": 10,
+        "translation": 10,
+        "agent_workflow": 10,
+        "clarify": 10,
+        "other": 10
+      },
+      "language_counts": {
+        "en": 10,
+        "zh": 40
+      },
+      "sha256": "f5451a68f0d711b425705b87b2f29afb1b2cf546b4c7e1bf47fa5c3e3e6e206d"
+    },
+    "challenge": {
+      "records": 20,
+      "groups": 20,
+      "class_counts": {
+        "digital_human": 4,
+        "translation": 4,
+        "agent_workflow": 4,
+        "clarify": 4,
+        "other": 4
+      },
+      "language_counts": {
+        "en": 5,
+        "zh": 15
+      },
+      "sha256": "41b87764949941ac5e5b59453a78a121698904d2e130197c84e1e34ca66f43af"
+    }
+  },
+  "train-dev": {
+    "records": 200,
+    "sha256": "fcad11ec5a2f9dec1d78c281c0fcddf9cee2b3ee77c85cc0a99f639bdff3d6d6"
+  },
+  "csv": {
+    "records": 320,
+    "sha256": "5f8e1ee241ee90190f3ce06e25354213a67ef7c1a58703327e6f014bf015ab1f"
+  }
+}
